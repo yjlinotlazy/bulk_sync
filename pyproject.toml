@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bulk_synker"
+version = "0.1.0"
+description = "A simple package to sync multiple paths"
+authors = [
+    {name = "yl", email = "yjlinotlazy@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.6"
+dependencies = [
+    "pandas",
+]
+[project.scripts]
+bulk_synker = "bulk_sync.main:main"
+
+[project.urls]
+"Homepage" = "https://github.com/yjlinotlazy/bulk_sync"

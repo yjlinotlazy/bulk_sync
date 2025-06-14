@@ -1,6 +1,9 @@
 import pandas as pd
 import os
 import subprocess
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BulkSynker:
@@ -40,7 +43,7 @@ class BulkSynker:
 
     def load_db(self, filename: str) -> None:
         # load a csv file in the format of
-        # source,destination
+        # source,destinationaction='store_true'
         try:
             df = pd.read_csv(filename, header=None)
             df.columns = ["raw_src", "raw_target"]
@@ -48,13 +51,13 @@ class BulkSynker:
             df["target"] = df.apply(self._process_target, axis=1)
             self.db = df[["src", "target"]]
         except Exception as _e:
-            print("Failed to load file: ", _e.__class__)
+            logger.exception("Failed to load file: ", _e.__class__)
             self.db = None
 
     def validate_row(self, src) -> bool:
         # Validate a single pair of src and target directory
         if not os.path.exists(src):
-            print(f"Source path {src} does not exist!")
+            logger.warning(f"Source path {src} does not exist!")
             return False
         else:
             return True
@@ -62,15 +65,17 @@ class BulkSynker:
     def validate(self, db) -> tuple:
         # Validate the input file before running the sync job.
         if db is None:
-            print("no db")
+            logger.warning("no db")
             return None, 0, 0
         total = db.shape[0]
         db["is_valid"] = db["src"].apply(self.validate_row)
         valid_count = db.is_valid.sum()
         if valid_count < db.shape[0]:
-            print(f"{valid_count} out of {db.shape[0]} rows have valid source path")
+            logger.warning(
+                f"{valid_count} out of {db.shape[0]} rows have valid source path"
+            )
         else:
-            print(f"All {db.shape[0]} rows have valid source path")
+            logger.info(f"All {db.shape[0]} rows have valid source path")
 
         db = db[db.is_valid]
         if db is not None and db.shape[0] > 0:
@@ -86,10 +91,10 @@ class BulkSynker:
             cmd.append("--dry-run")
         try:
             result = subprocess.run(cmd)
-            print(result.stdout)
+            logger.info(result.stdout)
             return result.returncode
         except Exception as e:
-            print("Sync command failed with ", e.__class__)
+            logger.exception("Sync command failed with ", e.__class__)
             return -1
 
     def syncall(self, dryrun: bool = True) -> None:
@@ -97,10 +102,10 @@ class BulkSynker:
         # line by line, so that the stdouts aren't mixed up
         succeed_cnt = 0
         if self.db is None:
-            print("No valid input")
+            logger.warning("No valid input")
         else:
             for _, row in self.db.iterrows():
                 result = self.sync(row["src"], row["target"], dryrun=dryrun)
                 if result == 0:
                     succeed_cnt += 1
-            print(f"{succeed_cnt} jobs succeeded out of {self.db.shape[0]} jobs")
+            logger.info(f"{succeed_cnt} jobs succeeded out of {self.db.shape[0]} jobs")

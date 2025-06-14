@@ -27,6 +27,17 @@ class BulkSynker:
     def get_db(self):
         return self.db
 
+    def _process_target(self, row) -> str:
+        raw_target = row["raw_target"]
+        src = row["src"]
+        if not raw_target or str(raw_target) == "nan":
+            prefix = self._add_user_dir(self.default_target)
+            # remove left / from the src so that it isn't treated
+            # as absolute path
+            return os.path.join(prefix, src.lstrip("/"))
+        else:
+            return self._add_user_dir(raw_target)
+
     def load_db(self, filename: str) -> None:
         # load a csv file in the format of
         # source,destination
@@ -34,7 +45,7 @@ class BulkSynker:
             df = pd.read_csv(filename, header=None)
             df.columns = ["raw_src", "raw_target"]
             df["src"] = df.raw_src.apply(self._process_path)
-            df["target"] = df.raw_target.apply(self._process_path, is_target=True)
+            df["target"] = df.apply(self._process_target, axis=1)
             self.db = df[["src", "target"]]
         except Exception as _e:
             print("Failed to load file: ", _e.__class__)
@@ -68,10 +79,28 @@ class BulkSynker:
             db = None
         return db, valid_count, total
 
-    def sync(self, src: str, target: str) -> None:
-        # use subprocess to call rsync on src -> dest
-        pass
+    def sync(self, src: str, target: str, dryrun: bool = True) -> int:
+        # use self.assertNotInubprocess to call rsync on src -> dest
+        cmd = ["rsync", "-avP", "--mkpath", src, target]
+        if dryrun:
+            cmd.append("--dry-run")
+        try:
+            result = subprocess.run(cmd)
+            print(result.stdout)
+            return result.returncode
+        except Exception as e:
+            print("Sync command failed with ", e.__class__)
+            return -1
 
-    def syncall(self) -> None:
-        # sync all paths
-        pass
+    def syncall(self, dryrun: bool = True) -> None:
+        # sync all paths. Instead of mapping, I want to go
+        # line by line, so that the stdouts aren't mixed up
+        succeed_cnt = 0
+        if self.db is None:
+            print("No valid input")
+        else:
+            for _, row in self.db.iterrows():
+                result = self.sync(row["src"], row["target"], dryrun=dryrun)
+                if result == 0:
+                    succeed_cnt += 1
+            print(f"{succeed_cnt} jobs succeeded out of {self.db.shape[0]} jobs")
